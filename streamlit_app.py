@@ -4,14 +4,15 @@ import plotly.express as px
 
 st.set_page_config(page_title="대학 지원 현황 - 막대그래프", layout="wide")
 
-st.title("대학 지원 현황 시각화 (막대그래프 전용)")
+st.title("대학 지원 현황 시각화 (막대그래프·컬러풀)")
 
 st.markdown("""
 **사용 안내**  
-- 이 앱은 엑셀 파일을 업로드하면 **G열(대학명)**을 기준으로 **대학별 지원 빈도수**를 막대그래프로 보여줍니다.  
-- X축은 **대학명**, Y축은 **빈도수(지원 건수)**입니다.  
-- 기본값으로 **7번째 열(G열)**을 대학 열로 추정하며, 다를 경우 화면의 선택박스에서 직접 지정하세요.  
-- 공백/결측 값은 **"미기재"**로 처리합니다.
+- 업로드한 엑셀의 **G열(대학명)** 기준으로 지원 빈도를 집계하여 막대그래프로 보여줍니다.  
+- 그래프 제목은 **C, D, B열** 데이터를 조합하여 자동 생성됩니다.  
+  예) `2025학년도 3학년 6반 수시 지원 대학 시각화`  
+- 공백/결측 값은 `"미기재"`로 처리합니다.  
+- 각 대학 막대는 **다채로운 색상 팔레트**를 사용해 표시됩니다.
 """)
 
 uploaded = st.file_uploader("엑셀 파일(.xlsx)을 업로드하세요", type=["xlsx"])
@@ -26,7 +27,6 @@ def safe_read_excel(file):
         return None
 
 def default_col_by_letter(df, letter):
-    """A=1 기준, G=7 → G열"""
     pos = ord(letter.upper()) - ord('A') + 1
     if 1 <= pos <= len(df.columns):
         return df.columns[pos-1]
@@ -40,6 +40,15 @@ def build_univ_counts(df, univ_col):
     out = vc.rename_axis("대학").reset_index(name="지원수")
     out = out.sort_values("지원수", ascending=False, kind="mergesort").reset_index(drop=True)
     return out
+
+def make_title(df):
+    try:
+        c_val = str(df.iloc[0, 2]) if df.shape[1] > 2 else ""
+        d_val = str(df.iloc[0, 3]) if df.shape[1] > 3 else ""
+        b_val = str(df.iloc[0, 1]) if df.shape[1] > 1 else ""
+        return f"{c_val} {d_val} {b_val} 수시 지원 대학 시각화"
+    except Exception:
+        return "대학별 지원 빈도 시각화"
 
 if uploaded is not None:
     df = safe_read_excel(uploaded)
@@ -66,6 +75,8 @@ if uploaded is not None:
             st.dataframe(df.head(20))
             st.stop()
 
+        graph_title = make_title(df)
+
         # 상위 N개 옵션
         c1, c2 = st.columns([1, 3])
         with c1:
@@ -79,23 +90,28 @@ if uploaded is not None:
         if top_n and top_n > 0:
             plot_df = plot_df.head(int(top_n))
 
-        # 막대그래프
+        # 🎨 더 컬러풀한 팔레트 지정
+        palette = px.colors.qualitative.Set3 + px.colors.qualitative.Vivid + px.colors.qualitative.Dark24
+
         fig = px.bar(
             plot_df,
             x="대학",
             y="지원수",
+            color="대학",
             text="지원수",
-            title="대학별 지원 빈도 (G열 기준)"
+            title=graph_title,
+            color_discrete_sequence=palette
         )
+        fig.update_traces(textposition="outside")
         fig.update_layout(
             xaxis_tickangle=-45,
             xaxis_title=None,
             yaxis_title=None,
-            margin=dict(l=10, r=10, t=60, b=10)
+            margin=dict(l=10, r=10, t=60, b=10),
+            showlegend=False
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # 데이터 표 & 다운로드
         with st.expander("데이터 표 보기"):
             st.dataframe(univ_counts, use_container_width=True)
 
