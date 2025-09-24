@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 
 st.set_page_config(page_title="대학 지원 현황 - 다중 파일 합산", layout="wide")
-st.title("대학 지원 현황 시각화 (다중 파일·막대그래프·컬러풀)")
+st.title("대입 전형자료 조회 데이터 기반 지원 현황 시각화 (다중 파일·막대그래프·컬러풀)")
 
 st.markdown("""
 **사용 안내**  
