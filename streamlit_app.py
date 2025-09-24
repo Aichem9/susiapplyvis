@@ -1,24 +1,28 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from io import BytesIO
 
-st.set_page_config(page_title="대학 지원 현황 - 막대그래프", layout="wide")
-
-st.title("수시 모집 나이스 데이터 기반 대학 지원 현황 시각화 (막대그래프·컬러풀)")
+st.set_page_config(page_title="대학 지원 현황 - 다중 파일 합산", layout="wide")
+st.title("대학 지원 현황 시각화 (여러 파일 합산 · 막대그래프)")
 
 st.markdown("""
 **사용 안내**  
-- 이 앱은 업로드한 엑셀 파일을 읽어 **G열(대학명)** 기준으로 지원 빈도를 집계하여 막대그래프로 보여줍니다.  
-- 그래프 제목은 **C, D, B열** 데이터를 조합하여 자동 생성됩니다.  
-  예) `2025학년도 3학년 6반 수시 지원 대학 시각화`  
+- 같은 양식의 엑셀 파일을 **여러 개** 업로드하면 **G열(대학명)** 기준으로 **전체 합산 빈도**를 막대그래프로 보여줍니다.  
+- 그래프 제목은 **C, D, B열**의 값을 읽어 자동 생성합니다.  
+  예) `2025학년도 3학년 6반 수시 지원 대학 시각화` (여러 파일이면 맥락을 요약해서 표시)  
 - 공백/결측 값은 `"미기재"`로 처리합니다.  
 - 각 대학 막대는 **다채로운 색상 팔레트**를 사용해 표시됩니다.  
 
 📂 **엑셀 파일 저장 방법**  
-👉 나이스 > 대입전형 > 제공현황 조회 > **엑셀파일로 저장**
+👉 **나이스 > 대입전형 > 제공현황 조회 > 엑셀파일로 저장**
 """)
 
-uploaded = st.file_uploader("엑셀 파일(.xlsx)을 업로드하세요", type=["xlsx"])
+uploaded_files = st.file_uploader(
+    "엑셀 파일(.xlsx)을 하나 이상 업로드하세요",
+    type=["xlsx"],
+    accept_multiple_files=True
+)
 
 def safe_read_excel(file):
     try:
@@ -44,87 +48,85 @@ def build_univ_counts(df, univ_col):
     out = out.sort_values("지원수", ascending=False, kind="mergesort").reset_index(drop=True)
     return out
 
-def make_title(df):
-    try:
-        c_val = str(df.iloc[0, 2]) if df.shape[1] > 2 else ""
-        d_val = str(df.iloc[0, 3]) if df.shape[1] > 3 else ""
-        b_val = str(df.iloc[0, 1]) if df.shape[1] > 1 else ""
-        return f"{c_val} {d_val} {b_val} 수시 지원 대학 시각화"
-    except Exception:
-        return "대학별 지원 빈도 시각화"
-
-if uploaded is not None:
-    df = safe_read_excel(uploaded)
-    if df is not None and not df.empty:
-        default_univ_col = default_col_by_letter(df, "G")
-        if default_univ_col is None:
-            default_univ_col = df.columns[0]
-
-        univ_col = st.selectbox(
-            "대학(빈도) 컬럼 선택",
-            options=list(df.columns),
-            index=(list(df.columns).index(default_univ_col) if default_univ_col in df.columns else 0),
-            help="보통 G열(7번째 열)이 대학명입니다."
-        )
-
+def make_title_from_many(dfs):
+    """여러 파일의 C(2), D(3), B(1) 열 값을 요약하여 제목 생성"""
+    c_vals, d_vals, b_vals = set(), set(), set()
+    for df in dfs:
         try:
-            univ_counts = build_univ_counts(df, univ_col)
-        except KeyError:
-            st.error(f"선택한 컬럼을 찾을 수 없습니다: {univ_col}")
-            st.stop()
+            if df.shape[1] > 2 and pd.notna(df.iloc[0, 2]):
+                c_vals.add(str(df.iloc[0, 2]))
+            if df.shape[1] > 3 and pd.notna(df.iloc[0, 3]):
+                d_vals.add(str(df.iloc[0, 3]))
+            if df.shape[1] > 1 and pd.notna(df.iloc[0, 1]):
+                b_vals.add(str(df.iloc[0, 1]))
+        except Exception:
+            continue
 
-        if univ_counts.empty:
-            st.warning("집계 결과가 비어 있습니다. 대학 컬럼 선택을 확인해 주세요.")
-            st.dataframe(df.head(20))
-            st.stop()
+    def join_vals(vals):
+        if len(vals) == 0:
+            return ""
+        if len(vals) == 1:
+            return list(vals)[0]
+        # 여러 값이면 범위를 요약
+        return f"{list(vals)[0]} 외"
 
-        graph_title = make_title(df)
+    c_part = join_vals(c_vals)
+    d_part = join_vals(d_vals)
+    b_part = join_vals(b_vals)
 
-        # 상위 N개 옵션
-        c1, c2 = st.columns([1, 3])
-        with c1:
-            top_n = st.number_input("상위 N개만 표시 (0=전체)", min_value=0, max_value=int(len(univ_counts)), value=min(20, int(len(univ_counts))))
-        with c2:
-            sort_desc = st.checkbox("빈도 내림차순 정렬", value=True)
+    parts = [p for p in [c_part, d_part, b_part] if p]
+    prefix = " ".join(parts) if parts else "통합"
+    return f"{prefix} 수시 지원 대학 시각화 (여러 파일 합산)"
 
-        plot_df = univ_counts.copy()
-        if sort_desc:
-            plot_df = plot_df.sort_values("지원수", ascending=False, kind="mergesort")
-        if top_n and top_n > 0:
-            plot_df = plot_df.head(int(top_n))
+if uploaded_files:
+    # 1) 모든 파일 읽기
+    dfs = []
+    bad_files = []
+    for f in uploaded_files:
+        df = safe_read_excel(f)
+        if df is not None and not df.empty:
+            dfs.append(df)
+        else:
+            bad_files.append(f.name)
 
-        # 🎨 더 컬러풀한 팔레트 지정
-        palette = px.colors.qualitative.Set3 + px.colors.qualitative.Vivid + px.colors.qualitative.Dark24
+    if bad_files:
+        st.warning("읽지 못한 파일: " + ", ".join(bad_files))
 
-        fig = px.bar(
-            plot_df,
-            x="대학",
-            y="지원수",
-            color="대학",
-            text="지원수",
-            title=graph_title,
-            color_discrete_sequence=palette
-        )
-        fig.update_traces(textposition="outside")
-        fig.update_layout(
-            xaxis_tickangle=-45,
-            xaxis_title=None,
-            yaxis_title=None,
-            margin=dict(l=10, r=10, t=60, b=10),
-            showlegend=False
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    if len(dfs) == 0:
+        st.stop()
 
-        with st.expander("데이터 표 보기"):
-            st.dataframe(univ_counts, use_container_width=True)
+    # 2) 기준 컬럼(G열) 자동 추정 (첫 번째 파일 기준), 필요시 변경 가능
+    first_df = dfs[0]
+    default_univ_col = default_col_by_letter(first_df, "G") or first_df.columns[0]
 
-        st.download_button(
-            "빈도표 CSV 다운로드",
-            data=univ_counts.to_csv(index=False).encode("utf-8-sig"),
-            file_name="대학별_지원빈도.csv",
-            mime="text/csv"
-        )
-    else:
-        st.warning("파일이 비어 있거나 읽을 수 없습니다.")
-else:
-    st.info("엑셀 파일을 업로드하면 바로 결과를 볼 수 있습니다.")
+    # 컬럼 선택 UI (모든 파일이 같은 구조라고 가정)
+    univ_col = st.selectbox(
+        "대학(빈도) 컬럼 선택",
+        options=list(first_df.columns),
+        index=(list(first_df.columns).index(default_univ_col) if default_univ_col in first_df.columns else 0),
+        help="보통 G열(7번째 열)이 대학명입니다."
+    )
+
+    # 3) 각 파일에서 대학 빈도 집계 → 모두 합산
+    per_file_counts = []
+    for df in dfs:
+        if univ_col not in df.columns:
+            st.error(f"선택한 컬럼({univ_col})이 없는 파일이 있습니다. 해당 파일은 건너뜁니다.")
+            continue
+        cnt = build_univ_counts(df, univ_col)
+        cnt["파일"] = "합산대상"
+        per_file_counts.append(cnt[["대학", "지원수"]])
+
+    if len(per_file_counts) == 0:
+        st.error("선택한 컬럼으로 집계할 수 있는 파일이 없습니다.")
+        st.stop()
+
+    # 전체 합산
+    total_df = pd.concat(per_file_counts, ignore_index=True)
+    total_counts = total_df.groupby("대학", as_index=False)["지원수"].sum()
+    total_counts = total_counts.sort_values("지원수", ascending=False, kind="mergesort").reset_index(drop=True)
+
+    # 4) 제목 생성
+    graph_title = make_title_from_many(dfs)
+
+    # 5) 상위
