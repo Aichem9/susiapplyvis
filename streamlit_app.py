@@ -4,7 +4,7 @@ import plotly.express as px
 
 st.set_page_config(page_title="대학 지원 현황 - 막대그래프", layout="wide")
 
-st.title("대학 지원 현황 시각화 (막대그래프·컬러풀)")
+st.title("수시 모집 나이스 데이터 기반 대학 지원 현황 시각화 (막대그래프·컬러풀)")
 
 st.markdown("""
 **사용 안내**  
